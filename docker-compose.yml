@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  oracle-db:
+    image: gvenzl/oracle-xe:21-slim-faststart  # Imagen ligera de Oracle 21c
+    container_name: oracle_esiligue
+    environment:
+      - ORACLE_PASSWORD=uca_password      # Contraseña para SYS y SYSTEM
+      - APP_USER=esiligue_admin           # Crea automáticamente tu usuario
+      - APP_USER_PASSWORD=uca_password         # Contraseña de tu usuario
+    ports:
+      - "1522:1521"                       # Puerto por defecto de Oracle
+    volumes:
+      - oracle_data:/opt/oracle/oradata   # Para no perder los datos al apagar
+  api:
+    build: image:joserun11/esiligue:v1  # Ruta al Dockerfile de tu API
+    container_name: api_esiligue
+    ports:
+      - "8080:8080"                       # Puerto para la API
+    environment:
+      - DB_URL=jdbc:oracle:thin:@oracle-db:1521/XEPDB1  # URL de conexión a la base de datos
+      - DB_USER=esiligue_admin           # Usuario de la base de datos
+      - DB_PASSWORD=uca_password # Contraseña de la base de datos
+    depends_on:
+      - oracle-db                         # Asegura que la base de datos esté lista antes de iniciar la API
+volumes:
+  oracle_data:
