@@ -13,7 +13,7 @@ services:
     volumes:
       - oracle_data:/opt/oracle/oradata   # Para no perder los datos al apagar
   api:
-    build: image:joserun11/esiligue:v1  # Ruta al Dockerfile de tu API
+    image: joserun11/esiligue:v1  # Ruta al Dockerfile de tu API
     container_name: api_esiligue
     ports:
       - "8080:8080"                       # Puerto para la API
