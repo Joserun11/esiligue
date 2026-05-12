@@ -7,7 +7,6 @@ Guia rapida para levantar backend + base de datos y ejecutar la app Android.
 - Docker Desktop (con Docker Compose)
 - Android Studio (version reciente)
 - JDK 21 (recomendado para backend si lo ejecutas fuera de Docker)
-- Misma red Wi-Fi en PC y movil si vas a probar en telefono fisico
 
 ## 2) Levantar backend y base de datos (Docker)
 
