@@ -11,14 +11,6 @@ ALTER SESSION SET CURRENT_SCHEMA = esiligue_admin;
 -- Orden correcto: TipoListaFotos PRIMERO
 -- ==========================================
 
-CREATE OR REPLACE TYPE TipoUbicacion AS OBJECT (
-    calle VARCHAR2(50),
-    ciudad VARCHAR2(50),
-    latitud NUMBER(10, 6),
-    longitud NUMBER(10, 6)
-);
-/
-
 -- FIX: TipoListaFotos se define ANTES de TipoUsuario (que lo referencia)
 CREATE OR REPLACE TYPE TipoListaFotos AS TABLE OF NUMBER;
 /
@@ -32,7 +24,7 @@ CREATE OR REPLACE TYPE TipoUsuario AS OBJECT (
     descripcion VARCHAR2(500),
     genero CHAR(1),
     es_premium CHAR(1),
-    ubicacion TipoUbicacion,
+    ciudad VARCHAR2(50),
     fotos TipoListaFotos  -- FIX: coma añadida en la línea anterior
 ) NOT FINAL;
 /
@@ -139,7 +131,6 @@ CREATE TABLE PreferenciaBusqueda (
     edad_max NUMBER(2),
     genero_interes CHAR CHECK (genero_interes IN ('M', 'F', 'O', 'A')),
     ciudad_interes VARCHAR2(50),
-    distancia_maxima NUMBER(5,2),
     CONSTRAINT fk_preferencia_usuario FOREIGN KEY (id_usuario)
         REFERENCES Usuario(id_usuario) ON DELETE CASCADE,
     CONSTRAINT chk_edad_max CHECK (edad_max >= edad_min)  -- FIX: constraint de tabla, no de columna
@@ -162,18 +153,17 @@ BEGIN
             :NEW.datos := TipoUsuarioFree(
                 v_premium_data.nombre, v_premium_data.correo, v_premium_data.contrasena,
                 v_premium_data.fecha_nacimiento, v_premium_data.carrera, v_premium_data.descripcion,
-                v_premium_data.genero, 'n', v_premium_data.ubicacion, v_premium_data.fotos, 20
+                v_premium_data.genero, 'n', v_premium_data.ciudad, v_premium_data.fotos, 20
             );
         ELSE
             NULL;
         END IF;
 
     ELSIF :NEW.datos IS OF (TipoUsuarioFree) THEN
-        -- FIX: sustituido v_premium_data.fotos (no inicializado aquí) por :NEW.datos.fotos
         :NEW.datos := TipoUsuarioFree(
             :NEW.datos.nombre, :NEW.datos.correo, :NEW.datos.contrasena,
             :NEW.datos.fecha_nacimiento, :NEW.datos.carrera, :NEW.datos.descripcion,
-            :NEW.datos.genero, 'n', :NEW.datos.ubicacion, :NEW.datos.fotos,
+            :NEW.datos.genero, 'n', :NEW.datos.ciudad, :NEW.datos.fotos,
             TREAT(:NEW.datos AS TipoUsuarioFree).numero_swipes_disponibles
         );
     END IF;
@@ -202,8 +192,6 @@ CREATE OR REPLACE TRIGGER trg_control_swipes
 BEFORE INSERT ON Swipe
 FOR EACH ROW
 DECLARE
-    -- FIX: eliminado PRAGMA AUTONOMOUS_TRANSACTION — causaba ORA-01403 porque
-    -- la transacción autónoma no veía los datos no confirmados de la sesión principal
     v_datos_usuario TipoUsuario;
     v_usuario_free TipoUsuarioFree;
 BEGIN
@@ -228,13 +216,11 @@ BEGIN
             v_usuario_free.descripcion,
             v_usuario_free.genero,
             v_usuario_free.es_premium,
-            v_usuario_free.ubicacion,
+            v_usuario_free.ciudad,
             v_usuario_free.fotos,
             v_usuario_free.numero_swipes_disponibles - 1
         )
         WHERE id_usuario = :NEW.id_origen;
-        -- FIX: eliminado COMMIT — en un trigger BEFORE sin transacción autónoma
-        -- el commit lo gestiona la transacción principal (registrar_swipe)
     END IF;
 END;
 /
@@ -346,8 +332,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_esiligue AS
             u.datos.carrera,
             u.datos.descripcion,
             u.datos.genero,
-            'n',
-            u.datos.ubicacion,
+            u.datos.ciudad,
             u.datos.fotos,
             20
         )
@@ -379,7 +364,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_esiligue AS
             TREAT(u.datos AS TipoUsuarioFree).descripcion,
             TREAT(u.datos AS TipoUsuarioFree).genero,
             TREAT(u.datos AS TipoUsuarioFree).es_premium,
-            TREAT(u.datos AS TipoUsuarioFree).ubicacion,
+            TREAT(u.datos AS TipoUsuarioFree).ciudad,
             TREAT(u.datos AS TipoUsuarioFree).fotos,
             10
         )
@@ -396,8 +381,6 @@ END pkg_esiligue;
 -- INSERCIÓN DE DATOS DE PRUEBA
 -- ==========================================
 
--- FIX: todos los INSERT incluyen el campo fotos (TipoListaFotos())
-
 -- Usuario 1: Free (Hombre)
 INSERT INTO Usuario (id_usuario, datos)
 VALUES (id_usuario.NEXTVAL,
@@ -405,7 +388,7 @@ VALUES (id_usuario.NEXTVAL,
         'Juan Pérez', 'juan.perez@alum.uca.es', 'pass123',
         TO_DATE('1995-03-10', 'YYYY-MM-DD'), 'Ingeniería Informática',
         'Amante de la tecnología y el senderismo.', 'M', 'n',
-        TipoUbicacion('Calle Mayor 1', 'Madrid', 40.4167, -3.7037),
+        'Madrid',
         TipoListaFotos(),
         10
     )
@@ -418,7 +401,7 @@ VALUES (id_usuario.NEXTVAL,
         'María García', 'm.garcia@alum.uca.es', 'secure456',
         TO_DATE('1997-07-22', 'YYYY-MM-DD'), 'Bellas Artes',
         'Pintora aficionada buscando nuevas aventuras.', 'F', 'n',
-        TipoUbicacion('Gran Vía 45', 'Madrid', 40.4192, -3.7058),
+        'Madrid',
         TipoListaFotos(),
         10
     )
@@ -431,7 +414,7 @@ VALUES (id_usuario.NEXTVAL,
         'Carlos Ruiz', 'carlos.premium@alum.uca.es', 'premium789',
         TO_DATE('1990-11-05', 'YYYY-MM-DD'), 'Administración de Empresas',
         'Viajero empedernido y deportista.', 'M', 's',
-        TipoUbicacion('Paseo de Gracia 12', 'Barcelona', 41.3851, 2.1734),
+        'Barcelona',
         TipoListaFotos(),
         SYSDATE, SYSDATE + 30
     )
@@ -444,24 +427,24 @@ VALUES (id_usuario.NEXTVAL,
         'Lucía Fernández', 'lucia.f@alum.uca.es', 'lucia99',
         TO_DATE('1999-01-30', 'YYYY-MM-DD'), 'Medicina',
         'Estudiante de último año, me encanta el café.', 'F', 's',
-        TipoUbicacion('Calle Balmes 8', 'Barcelona', 41.3900, 2.1600),
+        'Barcelona',
         TipoListaFotos(),
         SYSDATE, SYSDATE + 365
     )
 );
 
 -- 2. Preferencias de Búsqueda
-INSERT INTO PreferenciaBusqueda (id_usuario, edad_min, edad_max, genero_interes, distancia_maxima)
-SELECT id_usuario, 18, 30, 'F', 50.00 FROM Usuario u WHERE u.datos.correo = 'juan.perez@alum.uca.es';
+INSERT INTO PreferenciaBusqueda (id_usuario, edad_min, edad_max, genero_interes, ciudad_interes)
+SELECT id_usuario, 18, 30, 'F', 'Cádiz (Provincia)' FROM Usuario u WHERE u.datos.correo = 'juan.perez@alum.uca.es';
 
-INSERT INTO PreferenciaBusqueda (id_usuario, edad_min, edad_max, genero_interes, distancia_maxima)
-SELECT id_usuario, 20, 35, 'M', 30.00 FROM Usuario u WHERE u.datos.correo = 'm.garcia@alum.uca.es';
+INSERT INTO PreferenciaBusqueda (id_usuario, edad_min, edad_max, genero_interes, ciudad_interes)
+SELECT id_usuario, 20, 35, 'M', 'Cádiz (Provincia)' FROM Usuario u WHERE u.datos.correo = 'm.garcia@alum.uca.es';
 
-INSERT INTO PreferenciaBusqueda (id_usuario, edad_min, edad_max, genero_interes, distancia_maxima)
-SELECT id_usuario, 25, 45, 'A', 100.00 FROM Usuario u WHERE u.datos.correo = 'carlos.premium@alum.uca.es';
+INSERT INTO PreferenciaBusqueda (id_usuario, edad_min, edad_max, genero_interes, ciudad_interes)
+SELECT id_usuario, 25, 45, 'A', 'Cádiz (Provincia)' FROM Usuario u WHERE u.datos.correo = 'carlos.premium@alum.uca.es';
 
-INSERT INTO PreferenciaBusqueda (id_usuario, edad_min, edad_max, genero_interes, distancia_maxima)
-SELECT id_usuario, 22, 40, 'M', 20.00 FROM Usuario u WHERE u.datos.correo = 'lucia.f@alum.uca.es';
+INSERT INTO PreferenciaBusqueda (id_usuario, edad_min, edad_max, genero_interes, ciudad_interes)
+SELECT id_usuario, 22, 40, 'M', 'Cádiz (Provincia)' FROM Usuario u WHERE u.datos.correo = 'lucia.f@alum.uca.es';
 
 -- 3. Archivos Multimedia
 INSERT INTO ArchivoMultimedia (id_archivo, id_usuario, tipo_archivo, url, fecha_subida)
