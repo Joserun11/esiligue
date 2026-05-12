@@ -170,6 +170,21 @@ fun calcularEdadDesdeFechaApi(fecha: String?): Int {
     }
 }
 
+fun parseFechaServidorMillis(fecha: String?): Long {
+    if (fecha.isNullOrBlank()) return System.currentTimeMillis()
+    val formatos = listOf("yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss.SSS")
+    for (formato in formatos) {
+        try {
+            val parser = SimpleDateFormat(formato, Locale.getDefault())
+            parser.isLenient = false
+            val date = parser.parse(fecha)
+            if (date != null) return date.time
+        } catch (_: Exception) {
+        }
+    }
+    return System.currentTimeMillis()
+}
+
 // --- VIEWMODEL ---
 class PerfilViewModel : ViewModel() {
     var email by mutableStateOf("")
@@ -342,21 +357,68 @@ class PerfilViewModel : ViewModel() {
     }
 
     fun obtenerMensajes(perfilId: Long): SnapshotStateList<Mensaje> {
-        return historialMensajes.getOrPut(perfilId) {
-            mutableStateListOf(
-                Mensaje(
-                    texto = "¡Habéis hecho match! Da el primer paso 👋",
-                    esMio = false,
-                    timestamp = 0L
-                )
-            )
-        }
+        return historialMensajes.getOrPut(perfilId) { mutableStateListOf() }
+    }
+
+    fun cargarConversacion(perfilId: Long) {
+        if (miIdReal == 0L) return
+
+        RetrofitClient.instance.obtenerConversacion(miIdReal, perfilId)
+            .enqueue(object : retrofit2.Callback<List<MensajeApiItem>> {
+                override fun onResponse(call: retrofit2.Call<List<MensajeApiItem>>, response: retrofit2.Response<List<MensajeApiItem>>) {
+                    if (response.isSuccessful) {
+                        val mensajes = obtenerMensajes(perfilId)
+                        mensajes.clear()
+
+                        val lista = response.body()?.map { m ->
+                            Mensaje(
+                                id = (m.id_mensaje ?: UUID.randomUUID().toString()).toString(),
+                                texto = m.texto ?: "",
+                                esMio = m.id_emisor == miIdReal,
+                                timestamp = parseFechaServidorMillis(m.fecha_envio)
+                            )
+                        } ?: emptyList()
+
+                        if (lista.isEmpty()) {
+                            mensajes.add(
+                                Mensaje(
+                                    texto = "¡Habéis hecho match! Da el primer paso 👋",
+                                    esMio = false,
+                                    timestamp = 0L
+                                )
+                            )
+                        } else {
+                            mensajes.addAll(lista)
+                        }
+                    }
+                }
+
+                override fun onFailure(call: retrofit2.Call<List<MensajeApiItem>>, t: Throwable) {
+                    println("Error al cargar conversación: ${t.message}")
+                }
+            })
     }
 
     fun enviarMensaje(perfilId: Long, texto: String) {
-        if (texto.isNotBlank()) {
-            obtenerMensajes(perfilId).add(Mensaje(texto = texto, esMio = true))
-        }
+        if (texto.isBlank() || miIdReal == 0L) return
+
+        val request = MensajeApiRequest(
+            id_emisor = miIdReal,
+            id_receptor = perfilId,
+            texto = texto
+        )
+
+        RetrofitClient.instance.enviarMensaje(request).enqueue(object : retrofit2.Callback<String> {
+            override fun onResponse(call: retrofit2.Call<String>, response: retrofit2.Response<String>) {
+                if (response.isSuccessful && response.body() == "OK") {
+                    cargarConversacion(perfilId)
+                }
+            }
+
+            override fun onFailure(call: retrofit2.Call<String>, t: Throwable) {
+                println("Error al enviar mensaje: ${t.message}")
+            }
+        })
     }
 
     fun eliminarMensaje(perfilId: Long, mensajeId: String) {
@@ -479,7 +541,7 @@ class PerfilViewModel : ViewModel() {
         })
     }
 }
-
+    
 // --- NAVEGACIÓN ---
 @Composable
 fun ESILigueApp() {
@@ -1015,6 +1077,10 @@ fun PantallaChat(navController: NavController, vm: PerfilViewModel, perfil: Perf
     var mensajeOpciones by remember { mutableStateOf<Mensaje?>(null) }
     var mensajeAEditar by remember { mutableStateOf<Mensaje?>(null) }
     var textoEdicion by remember { mutableStateOf("") }
+
+    LaunchedEffect(perfil.id, vm.miIdReal) {
+        vm.cargarConversacion(perfil.id)
+    }
 
     Scaffold(
         topBar = {
@@ -2117,6 +2183,19 @@ data class Swipe(
     val tipo_swipe: String
 )
 
+data class MensajeApiRequest(
+    val id_emisor: Long,
+    val id_receptor: Long,
+    val texto: String
+)
+
+data class MensajeApiItem(
+    val id_mensaje: Any? = null,
+    val id_emisor: Long? = null,
+    val texto: String? = null,
+    val fecha_envio: String? = null
+)
+
 interface UsuarioApiService {
 
     @GET("api/usuarios/descubrir/{id}")
@@ -2151,6 +2230,12 @@ interface UsuarioApiService {
 
     @GET("api/usuarios/fotos/{id}")
     fun obtenerFotosDeUsuario(@Path("id") id: Long): Call<List<String>>
+
+    @POST("api/mensajes/enviar")
+    fun enviarMensaje(@Body req: MensajeApiRequest): Call<String>
+
+    @GET("api/mensajes/conversacion/{idA}/{idB}")
+    fun obtenerConversacion(@Path("idA") idA: Long, @Path("idB") idB: Long): Call<List<MensajeApiItem>>
 }
 
 object RetrofitClient {
