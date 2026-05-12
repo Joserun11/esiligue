@@ -9,6 +9,19 @@ Guia rapida para levantar backend + base de datos y ejecutar la app Android.
 - JDK 21 (recomendado para backend si lo ejecutas fuera de Docker)
 - Nota: Nosotros para la interfaz de la Base de Datos hemos usado DBeaver
 
+### Pasos a seguir para ver la BD en la interfaz.
+
+Para replicar el entorno de desarrollo, se debe configurar la conexión en el gestor de base de datos (DBeaver/SQL Developer) con los siguientes parámetros:
+- Motor de BD: Oracle Database (Express Edition).
+- Host: localhost (Servidor local).
+- Puerto: 1522
+- Servicio (PDB): XEPDB1
+- Usuario: esiligue_admin
+- Rol: Normal
+- Driver: Oracle JDBC Thin (no requiere cliente local instalado).
+
+**Nota** : Asegúrese de que el listener de Oracle esté escuchando en el puerto 1522 y que la base de datos pluggable XEPDB1 esté en modo READ WRITE antes de intentar la conexión.
+
 ## 2) Levantar backend y base de datos (Docker)
 
 Desde la raiz del repo:
