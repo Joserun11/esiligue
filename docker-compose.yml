@@ -1,27 +1,40 @@
 version: '3.8'
 
 services:
-  oracle-db:
-    image: gvenzl/oracle-xe:21-slim-faststart  # Imagen ligera de Oracle 21c
+  oracle-db: 
+    image: gvenzl/oracle-xe:21-slim-faststart
     container_name: oracle_esiligue
     environment:
-      - ORACLE_PASSWORD=uca_password      # Contraseña para SYS y SYSTEM
-      - APP_USER=esiligue_admin           # Crea automáticamente tu usuario
-      - APP_USER_PASSWORD=uca_password         # Contraseña de tu usuario
+      - ORACLE_PASSWORD=uca_password
+      - APP_USER=esiligue_admin
+      - APP_USER_PASSWORD=uca_password
     ports:
-      - "1522:1521"                       # Puerto por defecto de Oracle
+      - "1522:1521"
     volumes:
-      - oracle_data:/opt/oracle/oradata   # Para no perder los datos al apagar
+      - oracle_data:/opt/oracle/oradata
+      # ¡CORRECCIÓN AQUÍ! La ruta correcta para la imagen de gvenzl
+      - ./init.sql:/container-entrypoint-initdb.d/init.sql
+    healthcheck:
+      # Este script viene dentro de la imagen de gvenzl y comprueba si la BD está lista
+      test: ["CMD", "healthcheck.sh"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
   api:
-    image: joserun11/esiligue:v1  # Ruta al Dockerfile de tu API
+    image: joserun11/esiligue:v4
     container_name: api_esiligue
+    restart: on-failure
     ports:
-      - "8080:8080"                       # Puerto para la API
+      - "8080:8080"
     environment:
-      - DB_URL=jdbc:oracle:thin:@oracle-db:1521/XEPDB1  # URL de conexión a la base de datos
-      - DB_USER=esiligue_admin           # Usuario de la base de datos
-      - DB_PASSWORD=uca_password # Contraseña de la base de datos
+      - DB_URL=jdbc:oracle:thin:@oracle-db:1521/XEPDB1
+      - DB_USER=esiligue_admin
+      - DB_PASSWORD=uca_password
     depends_on:
-      - oracle-db                         # Asegura que la base de datos esté lista antes de iniciar la API
+      oracle-db:
+        # La API ahora esperará a que el healthcheck de Oracle diga "estoy listo"
+        condition: service_healthy 
+
 volumes:
   oracle_data:
