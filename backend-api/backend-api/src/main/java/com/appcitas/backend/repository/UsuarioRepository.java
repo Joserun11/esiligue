@@ -20,7 +20,8 @@ public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
             "u.DATOS.ES_PREMIUM AS ES_PREMIUM, " +
             "u.DATOS.CARRERA AS CARRERA, " +
             "u.DATOS.DESCRIPCION AS BIO, " +
-            "u.DATOS.FECHA_NACIMIENTO AS FECHA_NACIMIENTO " +
+            "u.DATOS.FECHA_NACIMIENTO AS FECHA_NACIMIENTO, " +
+            "u.DATOS.CIUDAD AS CIUDAD " +
             "FROM USUARIO u", nativeQuery = true)
     List<Usuario> obtenerTodosNativo();
 
@@ -55,7 +56,7 @@ public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
             "FROM USUARIO u WHERE u.ID_USUARIO != :miId " +
             "AND u.ID_USUARIO NOT IN (SELECT s.ID_DESTINO FROM SWIPE s WHERE s.ID_ORIGEN = :miId) " +
             "AND u.DATOS.GENERO = :genero " +
-            "AND u.DATOS.UBICACION.CIUDAD = :ciudad " +
+            "AND u.DATOS.CIUDAD = :ciudad " +
             "AND FLOOR(MONTHS_BETWEEN(SYSDATE, u.DATOS.FECHA_NACIMIENTO) / 12) BETWEEN :min AND :max", nativeQuery = true)
     List<Usuario> encontrarCandidatosUbicacion(@Param("miId") Long miId, @Param("genero") String genero, @Param("min") Integer min, @Param("max") Integer max, @Param("ciudad") String ciudad);
 
@@ -64,7 +65,7 @@ public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
             "u.DATOS.CARRERA AS CARRERA, u.DATOS.DESCRIPCION AS BIO, u.DATOS.FECHA_NACIMIENTO " +
             "FROM USUARIO u WHERE u.ID_USUARIO != :miId " +
             "AND u.ID_USUARIO NOT IN (SELECT s.ID_DESTINO FROM SWIPE s WHERE s.ID_ORIGEN = :miId) " +
-            "AND u.DATOS.UBICACION.CIUDAD = :ciudad " +
+            "AND u.DATOS.CIUDAD = :ciudad " +
             "AND FLOOR(MONTHS_BETWEEN(SYSDATE, u.DATOS.FECHA_NACIMIENTO) / 12) BETWEEN :min AND :max", nativeQuery = true)
     List<Usuario> encontrarCandidatosCualquierGeneroUbicacion(@Param("miId") Long miId, @Param("min") Integer min, @Param("max") Integer max, @Param("ciudad") String ciudad);
 

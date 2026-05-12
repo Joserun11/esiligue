@@ -29,14 +29,12 @@ public class UsuarioController {
     public List<Usuario> obtenerTodos() {
         List<Usuario> usuarios = usuarioRepository.obtenerTodosNativo();
         for (Usuario u : usuarios) {
-            u.setRango_inicio(18);
-            u.setRango_fin(49);
-            u.setQue_busco("Todos");
+          
             try {
-                // Usamos alias 't' para que Oracle no se líe con el objeto 'datos'
-                String sqlCiudad = "SELECT t.datos.ubicacion.ciudad FROM " + ESQUEMA + "\"USUARIO\" t WHERE t.id_usuario = ?";
+                // Mapear la ciudad directamente desde el tipo Oracle
+                String sqlCiudad = "SELECT t.datos.ciudad FROM " + ESQUEMA + "\"USUARIO\" t WHERE t.id_usuario = ?";
                 String ciudadActual = jdbcTemplate.queryForObject(sqlCiudad, String.class, u.getId_usuario());
-                u.setCiudad_residencia(ciudadActual != null ? ciudadActual : "Cádiz (Ciudad)");
+                u.setCiudad_residencia(ciudadActual != null ? ciudadActual : "Cádiz (Provincia)");
 
                 String sqlPref = "SELECT edad_min, edad_max, genero_interes, ciudad_interes FROM " + ESQUEMA + "PreferenciaBusqueda WHERE id_usuario = ?";
                 jdbcTemplate.query(sqlPref, new Object[]{u.getId_usuario()}, (rs) -> {
@@ -52,8 +50,14 @@ public class UsuarioController {
                     if (urls.size() >= 1) u.setFoto1(urls.get(0));
                     if (urls.size() >= 2) u.setFoto2(urls.get(1));
                     if (urls.size() >= 3) u.setFoto3(urls.get(2));
+                    if (urls.size() >= 4) u.setFoto4(urls.get(3));
+                    if (urls.size() >= 5) u.setFoto5(urls.get(4));
+                    if (urls.size() >= 6) u.setFoto6(urls.get(5));
                 }
             } catch (Exception e) {
+                u.setRango_inicio(18);
+                u.setRango_fin(49);
+                u.setQue_busco("Todos");
                 System.err.println("Error datos extra: " + e.getMessage());
             }
         }
@@ -73,7 +77,6 @@ public class UsuarioController {
         String generoInteresOracle = mapearGeneroBusqueda(u.getQue_busco());
         String ciudadRes = normalizarCiudadResidencia(u.getCiudad_residencia());
         String ciudadBusqueda = normalizarCiudadBusqueda(u.getCiudad_busqueda());
-        String calleRes = "";
         java.sql.Date fechaNacimiento = parseFechaNacimiento(u.getFecha_nacimiento());
 
         if (fechaNacimiento == null) {
@@ -85,18 +88,18 @@ public class UsuarioController {
 
         if (esEdicion) {
             idFinal = u.getId_usuario();
-            String sqlUpdate = "UPDATE " + ESQUEMA + "\"USUARIO\" SET datos = " + ESQUEMA + "TipoUsuarioFree(?, ?, ?, TO_DATE(?, 'YYYY-MM-DD'), ?, ?, ?, 'n', " + ESQUEMA + "TipoUbicacion(?, ?, 0, 0), " + ESQUEMA + "TipoListaFotos(), 20) WHERE id_usuario = ?";
-            jdbcTemplate.update(sqlUpdate, u.getNombre(), u.getCorreo(), passAGuardar, fechaNacimiento.toString(), u.getCarrera(), u.getBio(), generoOracle, calleRes, ciudadRes, idFinal);
+            String sqlUpdate = "UPDATE " + ESQUEMA + "\"USUARIO\" SET datos = " + ESQUEMA + "TipoUsuarioFree(?, ?, ?, TO_DATE(?, 'YYYY-MM-DD'), ?, ?, ?, 'n', ?, " + ESQUEMA + "TipoListaFotos(), 20) WHERE id_usuario = ?";
+            jdbcTemplate.update(sqlUpdate, u.getNombre(), u.getCorreo(), passAGuardar, fechaNacimiento.toString(), u.getCarrera(), u.getBio(), generoOracle, ciudadRes, idFinal);
         } else {
             idFinal = jdbcTemplate.queryForObject("SELECT " + ESQUEMA + "id_usuario.NEXTVAL FROM DUAL", Long.class);
-            String sqlInsert = "INSERT INTO " + ESQUEMA + "\"USUARIO\" (id_usuario, datos) VALUES (?, " + ESQUEMA + "TipoUsuarioFree(?, ?, ?, TO_DATE(?, 'YYYY-MM-DD'), ?, ?, ?, 'n', " + ESQUEMA + "TipoUbicacion(?, ?, 0, 0), " + ESQUEMA + "TipoListaFotos(), 20))";
-            jdbcTemplate.update(sqlInsert, idFinal, u.getNombre(), u.getCorreo(), passAGuardar, fechaNacimiento.toString(), u.getCarrera(), u.getBio(), generoOracle, calleRes, ciudadRes);
+            String sqlInsert = "INSERT INTO " + ESQUEMA + "\"USUARIO\" (id_usuario, datos) VALUES (?, " + ESQUEMA + "TipoUsuarioFree(?, ?, ?, TO_DATE(?, 'YYYY-MM-DD'), ?, ?, ?, 'n', ?, " + ESQUEMA + "TipoListaFotos(), 20))";
+            jdbcTemplate.update(sqlInsert, idFinal, u.getNombre(), u.getCorreo(), passAGuardar, fechaNacimiento.toString(), u.getCarrera(), u.getBio(), generoOracle, ciudadRes);
         }
 
         // Preferencias y Fotos
         jdbcTemplate.update("DELETE FROM " + ESQUEMA + "PreferenciaBusqueda WHERE id_usuario = ?", idFinal);
-        jdbcTemplate.update("INSERT INTO " + ESQUEMA + "PreferenciaBusqueda (id_usuario, edad_min, edad_max, genero_interes, ciudad_interes, distancia_maxima) VALUES (?, ?, ?, ?, ?, ?)",
-                idFinal, edadMin, edadMax, generoInteresOracle, ciudadBusqueda, 0);
+        jdbcTemplate.update("INSERT INTO " + ESQUEMA + "PreferenciaBusqueda (id_usuario, edad_min, edad_max, genero_interes, ciudad_interes) VALUES (?, ?, ?, ?, ?)",
+                idFinal, edadMin, edadMax, generoInteresOracle, ciudadBusqueda);
 
         u.setId_usuario(idFinal);
         return u;
@@ -185,24 +188,22 @@ public class UsuarioController {
 
             final Integer[] edadMin = {18};
             final Integer[] edadMax = {49};
-            final String[] generoInteres = {"A"};
-            final String[] ciudadInteres = {"Cádiz (Provincia)"};
+            final String[] generoInteres = {null}; 
+            final String[] ciudadInteres = {null};
 
             String sqlPref = "SELECT edad_min, edad_max, genero_interes, ciudad_interes FROM " + ESQUEMA + "PreferenciaBusqueda WHERE id_usuario = ?";
-            jdbcTemplate.query(sqlPref, new Object[]{id}, rs -> {
-                while (rs.next()) {
-                    edadMin[0] = rs.getInt("edad_min");
-                    edadMax[0] = rs.getInt("edad_max");
-                    generoInteres[0] = rs.getString("genero_interes");
-                    ciudadInteres[0] = rs.getString("ciudad_interes");
-                }
+            jdbcTemplate.query(sqlPref, new Object[]{id}, (rs, rowNum) -> {
+                edadMin[0] = rs.getInt("edad_min");
+                edadMax[0] = rs.getInt("edad_max");
+                generoInteres[0] = rs.getString("genero_interes");
+                ciudadInteres[0] = rs.getString("ciudad_interes");
                 return null;
             });
-
+            // System.out.println("Filtros aplicados: " + generoInteres[0] + " entre " + edadMin[0] + " y " + edadMax[0]);
             StringBuilder sqlCandidatos = new StringBuilder();
             List<Object> params = new ArrayList<>();
             sqlCandidatos.append("SELECT u.id_usuario, u.datos.nombre, u.datos.correo, ")
-                    .append("u.datos.genero, u.datos.carrera, u.datos.descripcion, u.datos.ubicacion.ciudad AS ciudad_residencia ")
+                    .append("u.datos.genero, u.datos.carrera, u.datos.descripcion, u.datos.ciudad AS ciudad_residencia ")
                     .append("FROM ").append(ESQUEMA).append("\"USUARIO\" u ")
                     .append("WHERE u.id_usuario != ? ")
                     .append("AND NOT EXISTS (SELECT 1 FROM ").append(ESQUEMA).append("SWIPE s WHERE s.id_origen = ? AND s.id_destino = u.id_usuario) ");
@@ -224,7 +225,7 @@ public class UsuarioController {
                     && !"A".equalsIgnoreCase(ciudadInteres[0]);
 
             if (filtrarPorCiudad) {
-                sqlCandidatos.append("AND u.datos.ubicacion.ciudad = ? ");
+                sqlCandidatos.append("AND u.datos.ciudad = ? ");
                 params.add(ciudadInteres[0]);
             }
 
@@ -286,9 +287,9 @@ public class UsuarioController {
     private void enriquecerUsuarios(List<Usuario> usuarios) {
         for (Usuario u : usuarios) {
             try {
-                String sqlCiudad = "SELECT t.datos.ubicacion.ciudad FROM " + ESQUEMA + "\"USUARIO\" t WHERE t.id_usuario = ?";
+                String sqlCiudad = "SELECT t.datos.ciudad FROM " + ESQUEMA + "\"USUARIO\" t WHERE t.id_usuario = ?";
                 String ciudadActual = jdbcTemplate.queryForObject(sqlCiudad, String.class, u.getId_usuario());
-                u.setCiudad_residencia(ciudadActual != null ? ciudadActual : "Cádiz (Ciudad)");
+                u.setCiudad_residencia(ciudadActual != null ? ciudadActual : "Cádiz (Provincia)");
 
                 String sqlPref = "SELECT edad_min, edad_max, genero_interes, ciudad_interes FROM " + ESQUEMA + "PreferenciaBusqueda WHERE id_usuario = ?";
                 jdbcTemplate.query(sqlPref, new Object[]{u.getId_usuario()}, (rs) -> {
@@ -343,14 +344,18 @@ public class UsuarioController {
         if (queBusco == null) return "A";
         switch (queBusco.trim().toLowerCase()) {
             case "chicos":
+            case "hombres":
                 return "M";
             case "chicas":
+            case "mujeres":
                 return "F";
+            case "todos":
+            case "ambos":
+                return "A";
             default:
                 return "A";
         }
-    }
-
+}
     private String mapaGeneroInteresATexto(String interes) {
         if (interes == null) return "Todos";
         switch (interes.trim().toUpperCase()) {
@@ -364,11 +369,17 @@ public class UsuarioController {
     }
 
     private String normalizarCiudadResidencia(String ciudad) {
-        return (ciudad == null || ciudad.isBlank()) ? "Cádiz (Ciudad)" : ciudad;
+        if (ciudad == null || ciudad.trim().isEmpty()) {
+            return "Cádiz (Ciudad)";
+        }
+        return ciudad.trim();
     }
 
     private String normalizarCiudadBusqueda(String ciudad) {
-        return (ciudad == null || ciudad.isBlank()) ? "Cádiz (Provincia)" : ciudad;
+       if (ciudad == null || ciudad.trim().isEmpty()) {
+            return "Cádiz (Provincia)";
+        }
+        return ciudad.trim();
     }
 
     private java.sql.Date parseFechaNacimiento(String valor) {
@@ -376,7 +387,7 @@ public class UsuarioController {
             return null;
         }
 
-        String[] formatos = new String[]{"dd/MM/yyyy", "yyyy-MM-dd", "ddMMyyyy", "yyyyMMdd"};
+        String[] formatos = new String[]{"dd/MM/yyyy", "yyyy-MM-dd", "ddMMyyyy", "yyyyMMdd", "dd-MM-yyyy"}; // Intentamos varios formatos comunes
         for (String formato : formatos) {
             try {
                 SimpleDateFormat parser = new SimpleDateFormat(formato, java.util.Locale.getDefault());

@@ -109,11 +109,21 @@ data class Mensaje(
 
 fun mapearGeneroDeOracle(codigoOracle: String?): String {
     return when (codigoOracle?.uppercase()?.trim()) {
-        "H" -> "Chico"
-        "M" -> "Chica"
+        "M" -> "Chico"
+        "F" -> "Chica"
         "O" -> "Otro"
-        else -> codigoOracle ?: "Otro" // Si ya viene como "Chico/Chica/Otro", lo respeta
+        else -> codigoOracle ?: "Otro"
     }
+}
+
+fun descomponerNombreCompleto(nombreCompleto: String?): Pair<String, String> {
+    val texto = nombreCompleto?.trim().orEmpty()
+    if (texto.isBlank()) return "" to ""
+
+    val partes = texto.split(Regex("\\s+"))
+    val nombre = partes.firstOrNull().orEmpty()
+    val apellido = if (partes.size > 1) partes.drop(1).joinToString(" ") else ""
+    return nombre to apellido
 }
 
 // --- VIEWMODEL ---
@@ -254,8 +264,11 @@ class PerfilViewModel : ViewModel() {
         password =
             sharedPreferences.getString("passwordUsuario", "") ?: "" // <--- ESTA ES LA LÍNEA NUEVA
 
-        nombre = sharedPreferences.getString("nombreUsuario", "Usuario") ?: "Usuario"
-        apellido = sharedPreferences.getString("apellidoUsuario", "") ?: ""
+        val nombrePersistido = sharedPreferences.getString("nombreUsuario", "Usuario") ?: "Usuario"
+        val apellidoPersistido = sharedPreferences.getString("apellidoUsuario", "") ?: ""
+        val (nombreBase, apellidoBase) = descomponerNombreCompleto(nombrePersistido)
+        nombre = nombreBase.ifBlank { nombrePersistido }
+        apellido = apellidoPersistido.ifBlank { apellidoBase }
         fechaNacimiento =
             sharedPreferences.getString("fechaNacimientoUsuario", "")?.filter { it.isDigit() } ?: ""
         carrera = sharedPreferences.getString("carreraUsuario", "") ?: ""
@@ -329,7 +342,7 @@ class PerfilViewModel : ViewModel() {
 
         perfilesDisponibles.addAll(perfilesReales)
 
-        // 👇 EL CAMBIO ESTRELLA: Pedimos las fotos del primer perfil 👇
+
         if (perfilesDisponibles.isNotEmpty()) {
             // En tu mazo de cartas, la última de la lista es la que se dibuja arriba del todo
             val idPrimerPerfil = perfilesDisponibles.last().id.toLong()
@@ -364,7 +377,7 @@ class PerfilViewModel : ViewModel() {
                 if (response.isSuccessful) {
                     matchesConfirmados.clear()
                     val lista = response.body()?.map { u ->
-                        // 👇 AQUÍ ESTABA EL FALLO: Añadimos seguridad contra nulos 👇
+            
                         PerfilFake(
                             id = u.id_usuario?.toLong() ?: 0,
                             nombre = u.nombre ?: "Usuario ESILigue",
@@ -552,13 +565,13 @@ fun PantallaPrincipalSwipe(navController: NavController, vm: PerfilViewModel) {
                     val perfil = perfilesFiltrados.last()
                     TarjetaPerfil(
                         perfil = perfil,
-                        // 👇 CAMBIO 1: Le pasamos la primera URL de la lista 👇
+                    
                         fotoUrl = vm.fotosDelPerfilActual.firstOrNull(),
 
                         onPass = {
                             vm.darLike(perfil, "PASS")
                             vm.perfilesDisponibles.remove(perfil)
-                            // 👇 CAMBIO 2: Pedimos las fotos del siguiente al dar NOPE 👇
+                  
                             if (vm.perfilesDisponibles.isNotEmpty()) {
                                 vm.cargarFotosParaPerfil(vm.perfilesDisponibles.last().id.toLong())
                             }
@@ -566,7 +579,7 @@ fun PantallaPrincipalSwipe(navController: NavController, vm: PerfilViewModel) {
                         onLike = {
                             vm.darLike(perfil, "LIKE")
                             Toast.makeText(context, "Like enviado", Toast.LENGTH_SHORT).show()
-                            // 👇 CAMBIO 3: Pedimos las fotos del siguiente al dar LIKE 👇
+                           
                             if (vm.perfilesDisponibles.isNotEmpty()) {
                                 vm.cargarFotosParaPerfil(vm.perfilesDisponibles.last().id.toLong())
                             }
@@ -574,7 +587,7 @@ fun PantallaPrincipalSwipe(navController: NavController, vm: PerfilViewModel) {
                         onSuper = {
                             if (vm.isPremium) {
                                 vm.darLike(perfil, "SUPERLIKE")
-                                // 👇 CAMBIO 4: Pedimos las fotos del siguiente al dar SUPERLIKE 👇
+                            
                                 if (vm.perfilesDisponibles.isNotEmpty()) {
                                     vm.cargarFotosParaPerfil(vm.perfilesDisponibles.last().id.toLong())
                                 }
@@ -716,7 +729,7 @@ fun TarjetaPerfil(
     ) {
         Box(Modifier.fillMaxSize()) {
 
-            // 👇 CAMBIO 2: Cargamos la imagen real si hay URL, si no, ponemos el icono gris 👇
+        
             if (fotoUrl != null) {
                 AsyncImage(
                     model = fotoUrl,
@@ -730,7 +743,7 @@ fun TarjetaPerfil(
                     Icon(Icons.Default.Person, null, Modifier.size(120.dp), AzulUCA.copy(0.1f))
                 }
             }
-            // 👆 FIN DEL CAMBIO 👆
+            
 
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.9f)), startY = 800f)))
 
@@ -1093,53 +1106,59 @@ fun PantallaMiPerfil(navController: NavController, vm: PerfilViewModel) {
 
     LaunchedEffect(Unit) {
         vm.cargarDatosDeMemoria(sharedPreferences)
-        RetrofitClient.instance.obtenerTodos().enqueue(object : retrofit2.Callback<List<Usuario>> {
-            override fun onResponse(call: retrofit2.Call<List<Usuario>>, response: retrofit2.Response<List<Usuario>>) {
+
+        val loginRequest = Usuario(correo = vm.email, contrasena = vm.password)
+        RetrofitClient.instance.login(loginRequest).enqueue(object : retrofit2.Callback<Usuario> {
+            override fun onResponse(call: retrofit2.Call<Usuario>, response: retrofit2.Response<Usuario>) {
                 if (response.isSuccessful) {
-                    val yo = response.body()?.find { it.id_usuario == vm.miIdReal }
-                        ?: response.body()?.find { it.correo == vm.email }
-                    yo?.let { user ->
-                        vm.nombre = user.nombre ?: vm.nombre
-                        vm.apellido = user.apellido ?: vm.apellido
+                    val user = response.body() ?: return
 
-                        // 👇 NUEVO: Cargamos la fecha de nacimiento en lugar de la edad cruda 👇
-                        vm.fechaNacimiento = user.fecha_nacimiento?.filter { it.isDigit() } ?: vm.fechaNacimiento
+                    // Campos de texto: nunca borramos valores válidos con nulos o blancos
+                    val (nombreBase, apellidoBase) = descomponerNombreCompleto(user.nombre)
+                    if (nombreBase.isNotBlank()) vm.nombre = nombreBase
+                    if (apellidoBase.isNotBlank()) vm.apellido = apellidoBase
+                    if (!user.carrera.isNullOrBlank())   vm.carrera   = user.carrera
+                    if (!user.bio.isNullOrBlank())       vm.bio       = user.bio
+                    if (!user.fecha_nacimiento.isNullOrBlank())
+                        vm.fechaNacimiento = user.fecha_nacimiento.filter { it.isDigit() }
 
-                        vm.carrera = user.carrera ?: vm.carrera
-                        vm.bio = user.bio ?: vm.bio
-                        vm.genero = mapearGeneroDeOracle(user.genero).ifBlank { vm.genero }
-                        vm.queBusco = user.que_busco ?: vm.queBusco
-                        vm.ciudadResidencia = user.ciudad_residencia ?: vm.ciudadResidencia
-                        vm.isPremium = when (user.es_premium) {
-                            "Sí" -> true
-                            "No" -> false
-                            else -> vm.isPremium
-                        }
+                    // Género: el servidor ya lo devuelve mapeado ("Chico/Chica/Otro") desde /login
+                    if (!user.genero.isNullOrBlank()) vm.genero = mapearGeneroDeOracle(user.genero)
 
-                        val inicio = user.rango_inicio?.toFloat() ?: vm.rangoEdadBusqueda.start
-                        val fin = user.rango_fin?.toFloat() ?: vm.rangoEdadBusqueda.endInclusive
-                        vm.rangoEdadBusqueda = inicio..fin
+                    // Preferencias
+                    if (!user.que_busco.isNullOrBlank()) vm.queBusco = user.que_busco
+                    if (!user.ciudad_residencia.isNullOrBlank()) vm.ciudadResidencia = user.ciudad_residencia
+                    if (!user.ciudad_busqueda.isNullOrBlank())   vm.ciudadBusqueda = user.ciudad_busqueda
 
-                        val fotosDesdeApi = listOf(
-                            user.foto1, user.foto2, user.foto3,
-                            user.foto4, user.foto5, user.foto6
-                        ).filterNotNull()
-                            .filter { it.isNotBlank() && (it.startsWith("http") || it.startsWith("content")) }
+                    val inicio = user.rango_inicio?.toFloat() ?: vm.rangoEdadBusqueda.start
+                    val fin    = user.rango_fin?.toFloat()    ?: vm.rangoEdadBusqueda.endInclusive
+                    vm.rangoEdadBusqueda = inicio..fin
 
-                        if (fotosDesdeApi.isNotEmpty()) {
-                            vm.fotosSelected.clear()
-                            fotosDesdeApi.forEach { fotoUrl ->
-                                vm.fotosSelected.add(Uri.parse(fotoUrl))
-                            }
-                            sharedPreferences.edit()
-                                .putString("fotosUsuario", fotosDesdeApi.joinToString(","))
-                                .apply()
-                        }
+                    vm.isPremium = when (user.es_premium) {
+                        "Sí" -> true
+                        "No" -> false
+                        else -> vm.isPremium
                     }
+
+                    // Fotos: solo tocamos si Oracle devuelve URLs reales
+                    val fotosDesdeApi = listOf(
+                        user.foto1, user.foto2, user.foto3,
+                        user.foto4, user.foto5, user.foto6
+                    ).filterNotNull()
+                        .filter { it.isNotBlank() && (it.startsWith("http") || it.startsWith("content")) }
+
+                    if (fotosDesdeApi.isNotEmpty()) {
+                        vm.fotosSelected.clear()
+                        fotosDesdeApi.forEach { vm.fotosSelected.add(Uri.parse(it)) }
+                        sharedPreferences.edit()
+                            .putString("fotosUsuario", fotosDesdeApi.joinToString(","))
+                            .apply()
+                    }
+                    // Si está vacío → no tocamos fotosSelected, se conservan las locales
                 }
             }
-            override fun onFailure(call: retrofit2.Call<List<Usuario>>, t: Throwable) {
-                Toast.makeText(context, "Error al conectar con el servidor", Toast.LENGTH_SHORT).show()
+            override fun onFailure(call: retrofit2.Call<Usuario>, t: Throwable) {
+                // Sin red → los datos de SharedPreferences ya están cargados, no hay problema
             }
         })
     }
@@ -1154,7 +1173,7 @@ fun PantallaMiPerfil(navController: NavController, vm: PerfilViewModel) {
             }
             Column(modifier = Modifier.padding(24.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // 👇 NUEVO: Usamos la función obtenerEdad() para mostrar el número 👇
+                
                     val edadCalculada = vm.obtenerEdad()
                     val textoEdad = if (edadCalculada > 0) edadCalculada.toString() else "00"
 
@@ -1257,7 +1276,7 @@ fun PantallaMiPerfil(navController: NavController, vm: PerfilViewModel) {
                             RetrofitClient.instance.eliminarUsuario(vm.email).enqueue(object : retrofit2.Callback<Void> {
                                 override fun onResponse(call: retrofit2.Call<Void>, response: retrofit2.Response<Void>) {
                                     if (response.isSuccessful) {
-                                        // 👇 LIMPIEZA TOTAL 👇
+                                    
                                         vm.limpiarDatosParaNuevaSesion()
                                         sharedPreferences.edit().clear().apply()
 
@@ -1601,7 +1620,7 @@ fun PantallaSubirFotos(navController: NavController, vm: PerfilViewModel) {
                             onClick = {
                                 val nuevoUsuario = Usuario(
                                     id_usuario = if (vm.miIdReal != 0L) vm.miIdReal else null,
-                                    nombre = vm.nombre,
+                                    nombre = listOf(vm.nombre.trim(), vm.apellido.trim()).filter { it.isNotBlank() }.joinToString(" ").trim(),
                                     correo = vm.email,
                                     contrasena = vm.password,
                                     genero = vm.genero,
@@ -1639,7 +1658,7 @@ fun PantallaSubirFotos(navController: NavController, vm: PerfilViewModel) {
                                                     putLong("idUsuarioReal", idAsignado)
                                                     putString("emailRegistrado", vm.email)
                                                     putString("passwordUsuario", vm.password)
-                                                    putString("nombreUsuario", vm.nombre)
+                                                    putString("nombreUsuario", listOf(vm.nombre.trim(), vm.apellido.trim()).filter { it.isNotBlank() }.joinToString(" ").trim())
                                                     putString("fotosUsuario", fotosString)
                                                     putString("apellidoUsuario", vm.apellido)
                                                     putString("fechaNacimientoUsuario", vm.fechaNacimiento)
@@ -1834,23 +1853,23 @@ fun PantallaAuth(navController: NavController, vm: PerfilViewModel) {
                                             val idRecuperado = usuarioValido.id_usuario ?: 0L
                                             vm.miIdReal = idRecuperado
 
-                                            vm.nombre = usuarioValido.nombre ?: ""
-                                            vm.apellido = usuarioValido.apellido ?: ""
-                                            vm.bio = usuarioValido.bio ?: ""
-                                            vm.carrera = usuarioValido.carrera ?: ""
-                                            vm.genero = mapearGeneroDeOracle(usuarioValido.genero)
+                                            val (nombreBase, apellidoBase) = descomponerNombreCompleto(usuarioValido.nombre)
+                                            if (nombreBase.isNotBlank()) vm.nombre = nombreBase
+                                            if (apellidoBase.isNotBlank()) vm.apellido = apellidoBase
+                                            if (!usuarioValido.bio.isNullOrBlank()) vm.bio = usuarioValido.bio
+                                            if (!usuarioValido.carrera.isNullOrBlank()) vm.carrera = usuarioValido.carrera
+                                            if (!usuarioValido.genero.isNullOrBlank()) vm.genero = mapearGeneroDeOracle(usuarioValido.genero)
 
                                             // Cargamos la fecha de nacimiento en lugar de la edad cruda
                                             vm.fechaNacimiento = usuarioValido.fecha_nacimiento?.filter { it.isDigit() } ?: ""
 
-                                            vm.queBusco = usuarioValido.que_busco ?: vm.queBusco.ifBlank { "Todos" }
+                                            if (!usuarioValido.que_busco.isNullOrBlank()) vm.queBusco = usuarioValido.que_busco
                                             val inicio = usuarioValido.rango_inicio?.toFloat() ?: vm.rangoEdadBusqueda.start
                                             val fin = usuarioValido.rango_fin?.toFloat() ?: vm.rangoEdadBusqueda.endInclusive
                                             vm.rangoEdadBusqueda = inicio..fin
 
-                                            // 👇 NUEVO: Cargamos la ubicación para que los filtros funcionen
-                                            vm.ciudadResidencia = usuarioValido.ciudad_residencia ?: vm.ciudadResidencia
-                                            vm.ciudadBusqueda = usuarioValido.ciudad_busqueda ?: vm.ciudadBusqueda
+                                            if (!usuarioValido.ciudad_residencia.isNullOrBlank()) vm.ciudadResidencia = usuarioValido.ciudad_residencia
+                                            if (!usuarioValido.ciudad_busqueda.isNullOrBlank()) vm.ciudadBusqueda = usuarioValido.ciudad_busqueda
 
                                             vm.fotosSelected.clear()
 
@@ -1874,8 +1893,8 @@ fun PantallaAuth(navController: NavController, vm: PerfilViewModel) {
                                                 val fotosString = fotosDesdeOracle.filter { !it.isNullOrEmpty() }.joinToString(",")
                                                 putString("fotosUsuario", fotosString)
 
-                                                putString("nombreUsuario", usuarioValido.nombre)
-                                                putString("apellidoUsuario", usuarioValido.apellido)
+                                                putString("nombreUsuario", listOf(nombreBase, apellidoBase).filter { it.isNotBlank() }.joinToString(" ").trim())
+                                                putString("apellidoUsuario", apellidoBase)
                                                 putString("bioUsuario", usuarioValido.bio)
                                                 putString("carreraUsuario", usuarioValido.carrera)
                                                 putString("generoUsuario", usuarioValido.genero)
@@ -1887,7 +1906,7 @@ fun PantallaAuth(navController: NavController, vm: PerfilViewModel) {
                                                 putFloat("rangoEdadInicio", usuarioValido.rango_inicio?.toFloat() ?: 18f)
                                                 putFloat("rangoEdadFin", usuarioValido.rango_fin?.toFloat() ?: 49f)
 
-                                                // 👇 NUEVO: Guardamos la ciudad en memoria
+                                        
                                                 putString("ciudadResidenciaUsuario", vm.ciudadResidencia)
                                                 putString("ciudadBusquedaUsuario", vm.ciudadBusqueda)
 
@@ -1965,9 +1984,7 @@ fun PantallaPremium(navController: NavController, vm: PerfilViewModel) {
     }
 }
 
-// =========================================================================================
-// AQUÍ ESTÁN LAS CLASES Y LA CONFIGURACIÓN DE RED INTEGRADAS (¡YA NO TE DARÁN ERROR!)
-// =========================================================================================
+
 
 data class Usuario(
     val id_usuario: Long? = null,
@@ -1990,8 +2007,8 @@ data class Usuario(
     val foto4: String? = null,
     val foto5: String? = null,
     val foto6: String? = null,
-    val ciudad_residencia: String? = null, // 👈 AÑADE ESTO
-    val ciudad_busqueda: String? = null    // 👈 AÑADE ESTO
+    val ciudad_residencia: String? = null,
+    val ciudad_busqueda: String? = null
 )
 
 data class Swipe(
@@ -2024,7 +2041,6 @@ interface UsuarioApiService {
 
     // --- BLOQUE DE SEGURIDAD Y CUENTA ---
 
-    // 👇 AÑADE ESTA LÍNEA AQUÍ 👇
     @POST("api/usuarios/login")
     fun login(@Body usuario: Usuario): Call<Usuario>
 

@@ -38,6 +38,9 @@ public class Usuario {
     @Column(name = "BIO") // Debe coincidir con el alias AS BIO del Repository
     private String bio;
 
+    @Column(name = "CIUDAD")
+    private String ciudad;
+
     // --- CAMPOS TRANSITORIOS (IMPORTANTÍSIMO EL @Transient) ---
     // Estos campos NO existen en la tabla USUARIO, por eso llevan @Transient
     // para que Hibernate no los busque en el SELECT y no de error 17006.
