@@ -17,6 +17,7 @@ Para replicar el entorno de desarrollo, se debe configurar la conexión en el ge
 - Puerto: 1522
 - Servicio (PDB): XEPDB1
 - Usuario: esiligue_admin
+- Contraseña: uca_password
 - Rol: Normal
 - Driver: Oracle JDBC Thin (no requiere cliente local instalado).
 
