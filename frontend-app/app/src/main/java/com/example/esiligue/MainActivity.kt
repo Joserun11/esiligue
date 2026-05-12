@@ -58,6 +58,8 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.*
 import coil.compose.AsyncImage
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Locale
 import java.util.UUID
 import kotlin.math.roundToInt
 import retrofit2.Retrofit
@@ -105,6 +107,15 @@ data class Mensaje(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+fun mapearGeneroDeOracle(codigoOracle: String?): String {
+    return when (codigoOracle?.uppercase()?.trim()) {
+        "H" -> "Chico"
+        "M" -> "Chica"
+        "O" -> "Otro"
+        else -> codigoOracle ?: "Otro" // Si ya viene como "Chico/Chica/Otro", lo respeta
+    }
+}
+
 // --- VIEWMODEL ---
 class PerfilViewModel : ViewModel() {
     var email by mutableStateOf("")
@@ -140,31 +151,45 @@ class PerfilViewModel : ViewModel() {
 
     // Función que calcula los años exactos y comprueba si la fecha existe de verdad
     fun obtenerEdad(): Int {
-        // Filtramos para asegurar que solo calculamos con números
-        val numeros = fechaNacimiento.filter { it.isDigit() }
-        if (numeros.length != 8) return -1
-        return try {
-            val dia = numeros.substring(0, 2).toInt()
-            val mes = numeros.substring(2, 4).toInt()
-            val anio = numeros.substring(4, 8).toInt()
+        val fechaLimpia = fechaNacimiento.trim()
+        if (fechaLimpia.isBlank()) return -1
 
-            if (mes < 1 || mes > 12) return -1
-            val diasDelMes = when (mes) {
-                2 -> if (anio % 4 == 0 && (anio % 100 != 0 || anio % 400 == 0)) 29 else 28
-                4, 6, 9, 11 -> 30
-                else -> 31
+        val candidatos = listOf(fechaLimpia, fechaLimpia.filter { it.isDigit() }).distinct()
+        val formatos = listOf("ddMMyyyy", "yyyyMMdd", "dd/MM/yyyy", "yyyy-MM-dd", "yyyy-MM-dd HH:mm:ss")
+
+        var fechaParseada: java.util.Date? = null
+        for (valor in candidatos) {
+            for (formato in formatos) {
+                try {
+                    val parser = SimpleDateFormat(formato, Locale.getDefault())
+                    parser.isLenient = false
+                    val parsed = parser.parse(valor)
+                    if (parsed != null) {
+                        fechaParseada = parsed
+                        break
+                    }
+                } catch (_: Exception) {
+                }
             }
-            if (dia < 1 || dia > diasDelMes) return -1
+            if (fechaParseada != null) break
+        }
 
+        if (fechaParseada == null) return -1
+
+        return try {
             val hoy = java.util.Calendar.getInstance()
-            var edadCalc = hoy.get(java.util.Calendar.YEAR) - anio
-            if (hoy.get(java.util.Calendar.MONTH) + 1 < mes ||
-                (hoy.get(java.util.Calendar.MONTH) + 1 == mes && hoy.get(java.util.Calendar.DAY_OF_MONTH) < dia)
+            val nacimiento = java.util.Calendar.getInstance().apply { time = fechaParseada }
+
+            var edadCalc = hoy.get(java.util.Calendar.YEAR) - nacimiento.get(java.util.Calendar.YEAR)
+            if (
+                hoy.get(java.util.Calendar.MONTH) < nacimiento.get(java.util.Calendar.MONTH) ||
+                (hoy.get(java.util.Calendar.MONTH) == nacimiento.get(java.util.Calendar.MONTH) &&
+                    hoy.get(java.util.Calendar.DAY_OF_MONTH) < nacimiento.get(java.util.Calendar.DAY_OF_MONTH))
             ) {
                 edadCalc--
             }
             edadCalc
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             -1
         }
     }
@@ -297,7 +322,7 @@ class PerfilViewModel : ViewModel() {
                 edad = usuarioOracle.edad ?: 0,
                 carrera = usuarioOracle.carrera ?: "Estudiante UCA",
                 bio = usuarioOracle.bio ?: "No hay biografía.",
-                genero = usuarioOracle.genero ?: "Otro",
+                genero = mapearGeneroDeOracle(usuarioOracle.genero),
                 meHaDadoLike = false
             )
         }
@@ -531,6 +556,7 @@ fun PantallaPrincipalSwipe(navController: NavController, vm: PerfilViewModel) {
                         fotoUrl = vm.fotosDelPerfilActual.firstOrNull(),
 
                         onPass = {
+                            vm.darLike(perfil, "PASS")
                             vm.perfilesDisponibles.remove(perfil)
                             // 👇 CAMBIO 2: Pedimos las fotos del siguiente al dar NOPE 👇
                             if (vm.perfilesDisponibles.isNotEmpty()) {
@@ -1070,7 +1096,8 @@ fun PantallaMiPerfil(navController: NavController, vm: PerfilViewModel) {
         RetrofitClient.instance.obtenerTodos().enqueue(object : retrofit2.Callback<List<Usuario>> {
             override fun onResponse(call: retrofit2.Call<List<Usuario>>, response: retrofit2.Response<List<Usuario>>) {
                 if (response.isSuccessful) {
-                    val yo = response.body()?.find { it.correo == vm.email }
+                    val yo = response.body()?.find { it.id_usuario == vm.miIdReal }
+                        ?: response.body()?.find { it.correo == vm.email }
                     yo?.let { user ->
                         vm.nombre = user.nombre ?: vm.nombre
                         vm.apellido = user.apellido ?: vm.apellido
@@ -1080,7 +1107,7 @@ fun PantallaMiPerfil(navController: NavController, vm: PerfilViewModel) {
 
                         vm.carrera = user.carrera ?: vm.carrera
                         vm.bio = user.bio ?: vm.bio
-                        vm.genero = user.genero ?: vm.genero
+                        vm.genero = mapearGeneroDeOracle(user.genero).ifBlank { vm.genero }
                         vm.queBusco = user.que_busco ?: vm.queBusco
                         vm.ciudadResidencia = user.ciudad_residencia ?: vm.ciudadResidencia
                         vm.isPremium = when (user.es_premium) {
@@ -1092,6 +1119,22 @@ fun PantallaMiPerfil(navController: NavController, vm: PerfilViewModel) {
                         val inicio = user.rango_inicio?.toFloat() ?: vm.rangoEdadBusqueda.start
                         val fin = user.rango_fin?.toFloat() ?: vm.rangoEdadBusqueda.endInclusive
                         vm.rangoEdadBusqueda = inicio..fin
+
+                        val fotosDesdeApi = listOf(
+                            user.foto1, user.foto2, user.foto3,
+                            user.foto4, user.foto5, user.foto6
+                        ).filterNotNull()
+                            .filter { it.isNotBlank() && (it.startsWith("http") || it.startsWith("content")) }
+
+                        if (fotosDesdeApi.isNotEmpty()) {
+                            vm.fotosSelected.clear()
+                            fotosDesdeApi.forEach { fotoUrl ->
+                                vm.fotosSelected.add(Uri.parse(fotoUrl))
+                            }
+                            sharedPreferences.edit()
+                                .putString("fotosUsuario", fotosDesdeApi.joinToString(","))
+                                .apply()
+                        }
                     }
                 }
             }
@@ -1795,19 +1838,19 @@ fun PantallaAuth(navController: NavController, vm: PerfilViewModel) {
                                             vm.apellido = usuarioValido.apellido ?: ""
                                             vm.bio = usuarioValido.bio ?: ""
                                             vm.carrera = usuarioValido.carrera ?: ""
-                                            vm.genero = usuarioValido.genero ?: ""
+                                            vm.genero = mapearGeneroDeOracle(usuarioValido.genero)
 
                                             // Cargamos la fecha de nacimiento en lugar de la edad cruda
                                             vm.fechaNacimiento = usuarioValido.fecha_nacimiento?.filter { it.isDigit() } ?: ""
 
-                                            vm.queBusco = usuarioValido.que_busco ?: "Todos"
-                                            val inicio = usuarioValido.rango_inicio?.toFloat() ?: 18f
-                                            val fin = usuarioValido.rango_fin?.toFloat() ?: 49f
+                                            vm.queBusco = usuarioValido.que_busco ?: vm.queBusco.ifBlank { "Todos" }
+                                            val inicio = usuarioValido.rango_inicio?.toFloat() ?: vm.rangoEdadBusqueda.start
+                                            val fin = usuarioValido.rango_fin?.toFloat() ?: vm.rangoEdadBusqueda.endInclusive
                                             vm.rangoEdadBusqueda = inicio..fin
 
                                             // 👇 NUEVO: Cargamos la ubicación para que los filtros funcionen
-                                            vm.ciudadResidencia = usuarioValido.ciudad_residencia ?: "Cádiz (Ciudad)"
-                                            vm.ciudadBusqueda = usuarioValido.ciudad_busqueda ?: "Cádiz (Provincia)"
+                                            vm.ciudadResidencia = usuarioValido.ciudad_residencia ?: vm.ciudadResidencia
+                                            vm.ciudadBusqueda = usuarioValido.ciudad_busqueda ?: vm.ciudadBusqueda
 
                                             vm.fotosSelected.clear()
 
@@ -1825,7 +1868,7 @@ fun PantallaAuth(navController: NavController, vm: PerfilViewModel) {
                                             sharedPreferences.edit().apply {
                                                 putBoolean("isLoggedIn", true)
                                                 putLong("idUsuarioReal", idRecuperado)
-                                                putString("emailRegistrado", usuarioValido.correo)
+                                                putString("emailRegistrado", usuarioValido.correo ?: vm.email)
                                                 putString("passwordUsuario", vm.password) // Guardamos la plana para autologin si hace falta
 
                                                 val fotosString = fotosDesdeOracle.filter { !it.isNullOrEmpty() }.joinToString(",")
