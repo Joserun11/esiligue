@@ -1989,7 +1989,7 @@ interface UsuarioApiService {
 }
 
 object RetrofitClient {
-    private const val BASE_URL = "http://localhost:8080/"
+    private const val BASE_URL = BuildConfig.API_BASE_URL
 
     val instance: UsuarioApiService by lazy {
         val retrofit = Retrofit.Builder()
