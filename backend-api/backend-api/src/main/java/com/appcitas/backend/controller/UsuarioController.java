@@ -10,6 +10,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import java.text.SimpleDateFormat;
+import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -101,8 +102,39 @@ public class UsuarioController {
         jdbcTemplate.update("INSERT INTO " + ESQUEMA + "PreferenciaBusqueda (id_usuario, edad_min, edad_max, genero_interes, ciudad_interes) VALUES (?, ?, ?, ?, ?)",
                 idFinal, edadMin, edadMax, generoInteresOracle, ciudadBusqueda);
 
+        // Persistimos fotos en ArchivoMultimedia (si llegan desde la app)
+        jdbcTemplate.update("DELETE FROM " + ESQUEMA + "ArchivoMultimedia WHERE id_usuario = ? AND tipo_archivo = 'foto'", idFinal);
+        List<String> fotos = Arrays.asList(u.getFoto1(), u.getFoto2(), u.getFoto3(), u.getFoto4(), u.getFoto5(), u.getFoto6());
+        for (String foto : fotos) {
+            if (foto != null && !foto.isBlank()) {
+                jdbcTemplate.update("INSERT INTO " + ESQUEMA + "ArchivoMultimedia (id_archivo, id_usuario, tipo_archivo, url, fecha_subida) VALUES (" + ESQUEMA + "id_archivo.NEXTVAL, ?, 'foto', ?, SYSDATE)",
+                        idFinal, foto.trim());
+            }
+        }
+
+        // Sincronizamos los IDs de ArchivoMultimedia en el atributo objeto datos.fotos (TipoListaFotos)
+        String sqlSyncFotosObjeto =
+            "UPDATE " + ESQUEMA + "\"USUARIO\" u " +
+            "SET u.datos = " + ESQUEMA + "TipoUsuarioFree(" +
+            "u.datos.nombre, u.datos.correo, u.datos.contrasena, u.datos.fecha_nacimiento, " +
+            "u.datos.carrera, u.datos.descripcion, u.datos.genero, u.datos.es_premium, u.datos.ciudad, " +
+            "CAST(MULTISET(" +
+            "  SELECT a.id_archivo FROM " + ESQUEMA + "ArchivoMultimedia a " +
+            "  WHERE a.id_usuario = u.id_usuario AND a.tipo_archivo = 'foto' " +
+            "  ORDER BY a.id_archivo" +
+            ") AS " + ESQUEMA + "TipoListaFotos), " +
+            "TREAT(u.datos AS " + ESQUEMA + "TipoUsuarioFree).numero_swipes_disponibles" +
+            ") " +
+            "WHERE u.id_usuario = ?";
+        jdbcTemplate.update(sqlSyncFotosObjeto, idFinal);
+
         u.setId_usuario(idFinal);
         return u;
+    }
+
+    @GetMapping("/fotos/{id}")
+    public List<String> obtenerFotosDeUsuario(@PathVariable Long id) {
+        return archivoRepository.encontrarUrlsPorUsuario(id);
     }
 
     @GetMapping("/existe/{correo}")
@@ -153,8 +185,8 @@ public class UsuarioController {
     @GetMapping("/recibidos/{id}")
     public List<Usuario> obtenerLikesRecibidos(@PathVariable Long id) {
         String sql = "SELECT DISTINCT u.id_usuario, u.datos.nombre AS nombre, u.datos.correo AS correo, " +
-                "u.datos.genero AS genero, u.datos.carrera AS carrera, u.datos.descripcion AS bio, " +
-                "u.datos.fecha_nacimiento AS fecha_nacimiento " +
+            "u.datos.genero AS genero, u.datos.carrera AS carrera, u.datos.descripcion AS bio, " +
+            "u.datos.fecha_nacimiento AS fecha_nacimiento, s.fecha_swipe AS fecha_swipe " +
                 "FROM " + ESQUEMA + "\"USUARIO\" u " +
                 "INNER JOIN " + ESQUEMA + "SWIPE s ON s.id_origen = u.id_usuario " +
                 "WHERE s.id_destino = ? AND s.tipo_swipe IN ('LIKE', 'SUPERLIKE') " +
@@ -202,8 +234,9 @@ public class UsuarioController {
             // System.out.println("Filtros aplicados: " + generoInteres[0] + " entre " + edadMin[0] + " y " + edadMax[0]);
             StringBuilder sqlCandidatos = new StringBuilder();
             List<Object> params = new ArrayList<>();
-            sqlCandidatos.append("SELECT u.id_usuario, u.datos.nombre, u.datos.correo, ")
-                    .append("u.datos.genero, u.datos.carrera, u.datos.descripcion, u.datos.ciudad AS ciudad_residencia ")
+                sqlCandidatos.append("SELECT u.id_usuario, u.datos.nombre AS nombre, u.datos.correo AS correo, ")
+                    .append("u.datos.genero AS genero, u.datos.carrera AS carrera, u.datos.descripcion AS bio, ")
+                    .append("u.datos.fecha_nacimiento AS fecha_nacimiento, u.datos.ciudad AS ciudad_residencia ")
                     .append("FROM ").append(ESQUEMA).append("\"USUARIO\" u ")
                     .append("WHERE u.id_usuario != ? ")
                     .append("AND NOT EXISTS (SELECT 1 FROM ").append(ESQUEMA).append("SWIPE s WHERE s.id_origen = ? AND s.id_destino = u.id_usuario) ");
@@ -239,7 +272,9 @@ public class UsuarioController {
                 String genActual = rs.getString("genero");
                 u.setGenero(mapearGenero(genActual));
                 u.setCarrera(rs.getString("carrera"));
-                u.setBio(rs.getString("descripcion"));
+                u.setBio(rs.getString("bio"));
+                u.setFecha_nacimiento(rs.getString("fecha_nacimiento"));
+                u.setEdad(calcularEdadDesdeTexto(u.getFecha_nacimiento()));
                 u.setCiudad_residencia(rs.getString("ciudad_residencia"));
                 u.setQue_busco(mapaGeneroInteresATexto(generoInteres[0]));
                 u.setRango_inicio(edadMin[0]);
@@ -281,7 +316,28 @@ public class UsuarioController {
         u.setCarrera(rs.getString("carrera"));
         u.setBio(rs.getString("bio"));
         u.setFecha_nacimiento(rs.getString("fecha_nacimiento"));
+        u.setEdad(calcularEdadDesdeTexto(u.getFecha_nacimiento()));
         return u;
+    }
+
+    private Integer calcularEdadDesdeTexto(String fechaTexto) {
+        java.sql.Date fecha = parseFechaNacimiento(fechaTexto);
+        if (fecha == null) {
+            return 0;
+        }
+
+        java.util.Calendar hoy = java.util.Calendar.getInstance();
+        java.util.Calendar nacimiento = java.util.Calendar.getInstance();
+        nacimiento.setTime(fecha);
+
+        int edad = hoy.get(java.util.Calendar.YEAR) - nacimiento.get(java.util.Calendar.YEAR);
+        if (hoy.get(java.util.Calendar.MONTH) < nacimiento.get(java.util.Calendar.MONTH)
+                || (hoy.get(java.util.Calendar.MONTH) == nacimiento.get(java.util.Calendar.MONTH)
+                && hoy.get(java.util.Calendar.DAY_OF_MONTH) < nacimiento.get(java.util.Calendar.DAY_OF_MONTH))) {
+            edad--;
+        }
+
+        return Math.max(edad, 0);
     }
 
     private void enriquecerUsuarios(List<Usuario> usuarios) {
@@ -330,10 +386,13 @@ public class UsuarioController {
         if (genero == null) return "O";
         switch (genero.trim().toLowerCase()) {
             case "chico":
+            case "m":
                 return "M";
             case "chica":
+            case "f":
                 return "F";
             case "otro":
+            case "o":
                 return "O";
             default:
                 return "O";
@@ -343,14 +402,20 @@ public class UsuarioController {
     private String mapearGeneroBusqueda(String queBusco) {
         if (queBusco == null) return "A";
         switch (queBusco.trim().toLowerCase()) {
+            case "chico":
             case "chicos":
             case "hombres":
+            case "m":
                 return "M";
+            case "chica":
             case "chicas":
             case "mujeres":
+            case "f":
                 return "F";
             case "todos":
             case "ambos":
+            case "amistad":
+            case "a":
                 return "A";
             default:
                 return "A";

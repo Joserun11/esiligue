@@ -38,6 +38,14 @@ public class SwipeController {
                     swipe.getTipo_swipe()
             );
 
+            String sqlMatch = "SELECT COUNT(*) FROM \"MATCH\" m WHERE m.activo = 1 AND m.id_usuario1 = LEAST(?, ?) AND m.id_usuario2 = GREATEST(?, ?)";
+            Integer totalMatches = jdbcTemplate.queryForObject(sqlMatch, Integer.class,
+                    swipe.getId_origen(), swipe.getId_destino(), swipe.getId_origen(), swipe.getId_destino());
+
+            if (totalMatches != null && totalMatches > 0) {
+                return "MATCH";
+            }
+
             return "OK";
         } catch (Exception e) {
             e.printStackTrace();

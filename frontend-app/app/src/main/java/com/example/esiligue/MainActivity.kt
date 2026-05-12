@@ -96,6 +96,7 @@ data class PerfilFake(
     val carrera: String,
     val bio: String,
     val genero: String,
+    val fotoUrl: String? = null,
     var meHaDadoLike: Boolean = false,
     var esSuperLike: Boolean = false
 )
@@ -124,6 +125,49 @@ fun descomponerNombreCompleto(nombreCompleto: String?): Pair<String, String> {
     val nombre = partes.firstOrNull().orEmpty()
     val apellido = if (partes.size > 1) partes.drop(1).joinToString(" ") else ""
     return nombre to apellido
+}
+
+fun normalizarFechaNacimientoDesdeApi(fecha: String?): String {
+    if (fecha.isNullOrBlank()) return ""
+
+    val soloDigitos = fecha.filter { it.isDigit() }
+    if (soloDigitos.length >= 8) {
+        val primeros8 = soloDigitos.take(8)
+        // Oracle suele enviar YYYYMMDD..., la app trabaja con DDMMAAAA al guardar.
+        return if (primeros8.startsWith("19") || primeros8.startsWith("20")) {
+            primeros8.substring(6, 8) + primeros8.substring(4, 6) + primeros8.substring(0, 4)
+        } else {
+            primeros8
+        }
+    }
+
+    return ""
+}
+
+fun calcularEdadDesdeFechaApi(fecha: String?): Int {
+    val fechaNormalizada = normalizarFechaNacimientoDesdeApi(fecha)
+    if (fechaNormalizada.length != 8) return 0
+
+    return try {
+        val parser = SimpleDateFormat("ddMMyyyy", Locale.getDefault())
+        parser.isLenient = false
+        val fechaDate = parser.parse(fechaNormalizada) ?: return 0
+
+        val hoy = java.util.Calendar.getInstance()
+        val nacimiento = java.util.Calendar.getInstance().apply { time = fechaDate }
+
+        var edad = hoy.get(java.util.Calendar.YEAR) - nacimiento.get(java.util.Calendar.YEAR)
+        if (
+            hoy.get(java.util.Calendar.MONTH) < nacimiento.get(java.util.Calendar.MONTH) ||
+            (hoy.get(java.util.Calendar.MONTH) == nacimiento.get(java.util.Calendar.MONTH) &&
+                hoy.get(java.util.Calendar.DAY_OF_MONTH) < nacimiento.get(java.util.Calendar.DAY_OF_MONTH))
+        ) {
+            edad--
+        }
+        if (edad < 0) 0 else edad
+    } catch (_: Exception) {
+        0
+    }
 }
 
 // --- VIEWMODEL ---
@@ -157,6 +201,11 @@ class PerfilViewModel : ViewModel() {
                 println("Error al cargar fotos: ${t.message}")
             }
         })
+    }
+
+    private fun fotoPrincipalDeUsuario(usuario: Usuario): String? {
+        return listOf(usuario.foto1, usuario.foto2, usuario.foto3, usuario.foto4, usuario.foto5, usuario.foto6)
+            .firstOrNull { !it.isNullOrBlank() }
     }
 
     // Función que calcula los años exactos y comprueba si la fecha existe de verdad
@@ -332,10 +381,11 @@ class PerfilViewModel : ViewModel() {
             PerfilFake(
                 id = usuarioOracle.id_usuario?.toLong() ?: 0,
                 nombre = usuarioOracle.nombre ?: "Desconocido",
-                edad = usuarioOracle.edad ?: 0,
+                edad = if ((usuarioOracle.edad ?: 0) > 0) usuarioOracle.edad ?: 0 else calcularEdadDesdeFechaApi(usuarioOracle.fecha_nacimiento),
                 carrera = usuarioOracle.carrera ?: "Estudiante UCA",
                 bio = usuarioOracle.bio ?: "No hay biografía.",
                 genero = mapearGeneroDeOracle(usuarioOracle.genero),
+                fotoUrl = fotoPrincipalDeUsuario(usuarioOracle),
                 meHaDadoLike = false
             )
         }
@@ -381,10 +431,11 @@ class PerfilViewModel : ViewModel() {
                         PerfilFake(
                             id = u.id_usuario?.toLong() ?: 0,
                             nombre = u.nombre ?: "Usuario ESILigue",
-                            edad = u.edad ?: 0,
+                            edad = if ((u.edad ?: 0) > 0) u.edad ?: 0 else calcularEdadDesdeFechaApi(u.fecha_nacimiento),
                             carrera = u.carrera ?: "Estudiante",
                             bio = u.bio ?: "",
                             genero = u.genero ?: "Otro",
+                            fotoUrl = listOf(u.foto1, u.foto2, u.foto3, u.foto4, u.foto5, u.foto6).firstOrNull { !it.isNullOrBlank() },
                             meHaDadoLike = true // Si es un match, obviamente hay like
                         )
                     } ?: emptyList()
@@ -394,6 +445,36 @@ class PerfilViewModel : ViewModel() {
             override fun onFailure(call: retrofit2.Call<List<Usuario>>, t: Throwable) {
                 // Siempre es bueno poner un log para saber si falla la red
                 println("Error al cargar matches: ${t.message}")
+            }
+        })
+    }
+
+    fun cargarLikesRecibidos() {
+        if (miIdReal == 0L) return
+
+        RetrofitClient.instance.obtenerLikesRecibidos(miIdReal).enqueue(object : retrofit2.Callback<List<Usuario>> {
+            override fun onResponse(call: retrofit2.Call<List<Usuario>>, response: retrofit2.Response<List<Usuario>>) {
+                if (response.isSuccessful) {
+                    val lista = response.body()?.map { u ->
+                        PerfilFake(
+                            id = u.id_usuario?.toLong() ?: 0,
+                            nombre = u.nombre ?: "Usuario ESILigue",
+                            edad = if ((u.edad ?: 0) > 0) u.edad ?: 0 else calcularEdadDesdeFechaApi(u.fecha_nacimiento),
+                            carrera = u.carrera ?: "Estudiante",
+                            bio = u.bio ?: "",
+                            genero = u.genero ?: "Otro",
+                            fotoUrl = listOf(u.foto1, u.foto2, u.foto3, u.foto4, u.foto5, u.foto6).firstOrNull { !it.isNullOrBlank() },
+                            meHaDadoLike = true
+                        )
+                    } ?: emptyList()
+
+                    quienesMeDieronLike.clear()
+                    quienesMeDieronLike.addAll(lista)
+                }
+            }
+
+            override fun onFailure(call: retrofit2.Call<List<Usuario>>, t: Throwable) {
+                println("Error al cargar likes recibidos: ${t.message}")
             }
         })
     }
@@ -565,8 +646,7 @@ fun PantallaPrincipalSwipe(navController: NavController, vm: PerfilViewModel) {
                     val perfil = perfilesFiltrados.last()
                     TarjetaPerfil(
                         perfil = perfil,
-                    
-                        fotoUrl = vm.fotosDelPerfilActual.firstOrNull(),
+                        fotoUrl = perfil.fotoUrl,
 
                         onPass = {
                             vm.darLike(perfil, "PASS")
@@ -595,7 +675,10 @@ fun PantallaPrincipalSwipe(navController: NavController, vm: PerfilViewModel) {
                                 navController.navigate("premium")
                             }
                         },
-                        onClick = { perfilSeleccionado = perfil }
+                        onClick = {
+                            vm.cargarFotosParaPerfil(perfil.id)
+                            perfilSeleccionado = perfil
+                        }
                     )
                 } else {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1026,7 +1109,7 @@ fun PantallaMatches(navController: NavController, vm: PerfilViewModel) {
 
     LaunchedEffect(Unit) {
         vm.cargarMatchesReales()
-        // Aquí podrías añadir también vm.cargarQuienesMeDieronLike()
+        vm.cargarLikesRecibidos()
     }
 
     Scaffold(
@@ -1051,7 +1134,6 @@ fun PantallaMatches(navController: NavController, vm: PerfilViewModel) {
                 0 -> ListaDeMatches(vm.matchesConfirmados, "match", onChatClick = { navController.navigate("chat/${it.id}") })
 
                 1 -> {
-                    // Filtramos los likes recibidos según tu preferencia actual
                     val leGustasFiltrado = vm.quienesMeDieronLike.filter { persona ->
                         when (vm.queBusco) {
                             "Chicas" -> persona.genero == "Chica"
@@ -1059,7 +1141,6 @@ fun PantallaMatches(navController: NavController, vm: PerfilViewModel) {
                             else -> true
                         }
                     }
-                    // 👇 CAMBIO AQUÍ: Añadimos "LIKE" como segundo parámetro 👇
                     ListaDeMatches(leGustasFiltrado, "le_gustas", onLikeBack = { perfil ->
                         vm.darLike(perfil, "LIKE")
                     })
@@ -1080,9 +1161,27 @@ fun ListaDeMatches(lista: List<PerfilFake>, tipoLista: String, onLikeBack: ((Per
             items(lista) { perfil ->
                 Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(Color.White), shape = RoundedCornerShape(16.dp)) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(50.dp).clip(CircleShape).background(GrisSuave), contentAlignment = Alignment.Center) { Icon(Icons.Default.Person, null, tint = AzulUCA) }
+                        Box(Modifier.size(56.dp).clip(CircleShape).background(GrisSuave), contentAlignment = Alignment.Center) {
+                            if (!perfil.fotoUrl.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = perfil.fotoUrl,
+                                    contentDescription = "Foto de ${perfil.nombre}",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Icon(Icons.Default.Person, null, tint = AzulUCA)
+                            }
+                        }
                         Spacer(Modifier.width(15.dp))
-                        Column(Modifier.weight(1f)) { Text(perfil.nombre, fontWeight = FontWeight.Bold); Text(perfil.carrera, fontSize = 12.sp, color = Color.Gray) }
+                        Column(Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(perfil.nombre, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.width(6.dp))
+                                Text(perfil.edad.toString(), color = Color.Gray, fontSize = 12.sp)
+                            }
+                            Text(perfil.carrera, fontSize = 12.sp, color = Color.Gray)
+                        }
                         if (perfil.esSuperLike) Icon(Icons.Default.Bolt, "Superlike", tint = Color(0xFF22C55E))
                         when (tipoLista) {
                             "match" -> IconButton(onClick = { onChatClick?.invoke(perfil) }) { Icon(Icons.AutoMirrored.Filled.Chat, "Chat", tint = AzulUCA) }
@@ -1120,7 +1219,7 @@ fun PantallaMiPerfil(navController: NavController, vm: PerfilViewModel) {
                     if (!user.carrera.isNullOrBlank())   vm.carrera   = user.carrera
                     if (!user.bio.isNullOrBlank())       vm.bio       = user.bio
                     if (!user.fecha_nacimiento.isNullOrBlank())
-                        vm.fechaNacimiento = user.fecha_nacimiento.filter { it.isDigit() }
+                        vm.fechaNacimiento = normalizarFechaNacimientoDesdeApi(user.fecha_nacimiento)
 
                     // Género: el servidor ya lo devuelve mapeado ("Chico/Chica/Otro") desde /login
                     if (!user.genero.isNullOrBlank()) vm.genero = mapearGeneroDeOracle(user.genero)
@@ -1861,7 +1960,7 @@ fun PantallaAuth(navController: NavController, vm: PerfilViewModel) {
                                             if (!usuarioValido.genero.isNullOrBlank()) vm.genero = mapearGeneroDeOracle(usuarioValido.genero)
 
                                             // Cargamos la fecha de nacimiento en lugar de la edad cruda
-                                            vm.fechaNacimiento = usuarioValido.fecha_nacimiento?.filter { it.isDigit() } ?: ""
+                                            vm.fechaNacimiento = normalizarFechaNacimientoDesdeApi(usuarioValido.fecha_nacimiento)
 
                                             if (!usuarioValido.que_busco.isNullOrBlank()) vm.queBusco = usuarioValido.que_busco
                                             val inicio = usuarioValido.rango_inicio?.toFloat() ?: vm.rangoEdadBusqueda.start
@@ -2033,10 +2132,10 @@ interface UsuarioApiService {
     @POST("api/swipes/registrar")
     fun registrarSwipe(@Body swipe: Swipe): Call<String>
 
-    @GET("api/swipes/recibidos/{id}")
+    @GET("api/usuarios/recibidos/{id}")
     fun obtenerLikesRecibidos(@Path("id") id: Long): Call<List<Usuario>>
 
-    @GET("api/swipes/matches/{id}")
+    @GET("api/usuarios/matches/{id}")
     fun obtenerMatches(@Path("id") id: Long): Call<List<Usuario>>
 
     // --- BLOQUE DE SEGURIDAD Y CUENTA ---

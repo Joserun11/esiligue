@@ -332,6 +332,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_esiligue AS
             u.datos.carrera,
             u.datos.descripcion,
             u.datos.genero,
+            'n',
             u.datos.ciudad,
             u.datos.fotos,
             20
