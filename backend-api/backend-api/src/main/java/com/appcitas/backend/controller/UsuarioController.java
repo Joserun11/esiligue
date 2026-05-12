@@ -74,18 +74,18 @@ public class UsuarioController {
 
         if (esEdicion) {
             idFinal = u.getId_usuario();
-            String sqlUpdate = "UPDATE " + ESQUEMA + "\"USUARIO\" SET datos = " + ESQUEMA + "TipoUsuarioFree(?, ?, ?, TO_DATE(?, 'YYYY-MM-DD'), ?, ?, ?, 'n', " + ESQUEMA + "TipoUbicacion(?, 'España', 0, 0), 20) WHERE id_usuario = ?";
+            String sqlUpdate = "UPDATE " + ESQUEMA + "\"USUARIO\" SET datos = " + ESQUEMA + "TipoUsuarioFree(?, ?, ?, TO_DATE(?, 'YYYY-MM-DD'), ?, ?, ?, 'n', " + ESQUEMA + "TipoUbicacion(?, 'España', 0, 0), " + ESQUEMA + "TipoListaFotos(), 20) WHERE id_usuario = ?";
             jdbcTemplate.update(sqlUpdate, u.getNombre(), u.getCorreo(), passAGuardar, fechaFija, u.getCarrera(), u.getBio(), generoOracle, ciudadRes, idFinal);
         } else {
             idFinal = jdbcTemplate.queryForObject("SELECT " + ESQUEMA + "id_usuario.NEXTVAL FROM DUAL", Long.class);
-            String sqlInsert = "INSERT INTO " + ESQUEMA + "\"USUARIO\" (id_usuario, datos) VALUES (?, " + ESQUEMA + "TipoUsuarioFree(?, ?, ?, TO_DATE(?, 'YYYY-MM-DD'), ?, ?, ?, 'n', " + ESQUEMA + "TipoUbicacion(?, 'España', 0, 0), 20))";
+            String sqlInsert = "INSERT INTO " + ESQUEMA + "\"USUARIO\" (id_usuario, datos) VALUES (?, " + ESQUEMA + "TipoUsuarioFree(?, ?, ?, TO_DATE(?, 'YYYY-MM-DD'), ?, ?, ?, 'n', " + ESQUEMA + "TipoUbicacion(?, 'España', 0, 0), " + ESQUEMA + "TipoListaFotos(), 20))";
             jdbcTemplate.update(sqlInsert, idFinal, u.getNombre(), u.getCorreo(), passAGuardar, fechaFija, u.getCarrera(), u.getBio(), generoOracle, ciudadRes);
         }
 
         // Preferencias y Fotos
         jdbcTemplate.update("DELETE FROM " + ESQUEMA + "PreferenciaBusqueda WHERE id_usuario = ?", idFinal);
-        jdbcTemplate.update("INSERT INTO " + ESQUEMA + "PreferenciaBusqueda (id_usuario, edad_min, edad_max, genero_interes, ciudad_interes) VALUES (?, ?, ?, ?, ?)",
-                idFinal, 18, 49, "A", ciudadRes);
+        jdbcTemplate.update("INSERT INTO " + ESQUEMA + "PreferenciaBusqueda (id_usuario, edad_min, edad_max, genero_interes, ciudad_interes, distancia_maxima) VALUES (?, ?, ?, ?, ?, ?)",
+                idFinal, 18, 49, "A", ciudadRes, 0);
 
         u.setId_usuario(idFinal);
         return u;

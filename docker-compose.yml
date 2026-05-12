@@ -22,7 +22,10 @@ services:
       retries: 10
 
   api:
-    image: joserun11/esiligue:v4
+    build:
+      context: ./backend-api/backend-api
+      dockerfile: Dockerfile
+    image: esiligue-api:local
     container_name: api_esiligue
     restart: on-failure
     ports:

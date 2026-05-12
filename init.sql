@@ -138,6 +138,7 @@ CREATE TABLE PreferenciaBusqueda (
     edad_min NUMBER(2) CHECK (edad_min >= 18),
     edad_max NUMBER(2),
     genero_interes CHAR CHECK (genero_interes IN ('M', 'F', 'O', 'A')),
+    ciudad_interes VARCHAR2(50),
     distancia_maxima NUMBER(5,2),
     CONSTRAINT fk_preferencia_usuario FOREIGN KEY (id_usuario)
         REFERENCES Usuario(id_usuario) ON DELETE CASCADE,

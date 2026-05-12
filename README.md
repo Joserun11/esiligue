@@ -36,6 +36,14 @@ La API queda publicada en el puerto `8080` de tu PC.
 
 La app usa la propiedad Gradle `API_BASE_URL`.
 
+Por defecto (si no defines nada) la app usa:
+
+```properties
+http://10.0.2.2:8080/
+```
+
+Ese valor funciona directamente en emulador Android y evita meter IPs personales en el repo.
+
 Archivo: `frontend-app/gradle.properties`
 
 ### Emulador Android
@@ -60,12 +68,24 @@ Notas importantes para movil fisico:
 - El firewall de Windows debe permitir conexiones entrantes al puerto `8080`.
 - Si cambia la IP del PC, actualiza `API_BASE_URL`.
 
+Recomendacion para entregar al profesor sin friccion:
+
+- Probar con emulador Android (no requiere cambiar IP).
+- No versionar una IP fija en `gradle.properties`.
+
 ## 4) Ejecutar app Android
 
 1. Abre la carpeta `frontend-app` en Android Studio.
 2. Espera a que sincronice Gradle.
-3. Selecciona un emulador o tu movil conectado.
-4. Pulsa Run para instalar y ejecutar.
+3. Preferencia recomendada para pruebas del profesor: usar un emulador Android (AVD).
+	- El emulador usa la dirección especial `10.0.2.2` que ya está configurada por defecto en la app.
+	- No hace falta editar `gradle.properties` ni tocar la IP local.
+4. Alternativa rápida (CLI): usa el script helper incluido para arrancar backend, compilar e instalar en un emulador ya iniciado.
+
+```powershell
+# Desde la raíz del repo en Windows PowerShell
+\frontend-app\scripts\run_on_emulator.ps1
+```
 
 ## 5) Flujo de uso recomendado
 
