@@ -1076,16 +1076,21 @@ fun PantallaMiPerfil(navController: NavController, vm: PerfilViewModel) {
                         vm.apellido = user.apellido ?: vm.apellido
 
                         // 👇 NUEVO: Cargamos la fecha de nacimiento en lugar de la edad cruda 👇
-                        vm.fechaNacimiento = user.fecha_nacimiento ?: vm.fechaNacimiento
+                        vm.fechaNacimiento = user.fecha_nacimiento?.filter { it.isDigit() } ?: vm.fechaNacimiento
 
                         vm.carrera = user.carrera ?: vm.carrera
                         vm.bio = user.bio ?: vm.bio
                         vm.genero = user.genero ?: vm.genero
                         vm.queBusco = user.que_busco ?: vm.queBusco
-                        vm.isPremium = user.es_premium == "Sí"
+                        vm.ciudadResidencia = user.ciudad_residencia ?: vm.ciudadResidencia
+                        vm.isPremium = when (user.es_premium) {
+                            "Sí" -> true
+                            "No" -> false
+                            else -> vm.isPremium
+                        }
 
-                        val inicio = user.rango_inicio?.toFloat() ?: 18f
-                        val fin = user.rango_fin?.toFloat() ?: 49f
+                        val inicio = user.rango_inicio?.toFloat() ?: vm.rangoEdadBusqueda.start
+                        val fin = user.rango_fin?.toFloat() ?: vm.rangoEdadBusqueda.endInclusive
                         vm.rangoEdadBusqueda = inicio..fin
                     }
                 }
@@ -1125,6 +1130,8 @@ fun PantallaMiPerfil(navController: NavController, vm: PerfilViewModel) {
                 }
                 Spacer(Modifier.height(12.dp))
                 InfoCard(Icons.Default.Cake, "Edad objetivo: de ${vm.rangoEdadBusqueda.start.roundToInt()} a ${vm.rangoEdadBusqueda.endInclusive.roundToInt()} años", modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(12.dp))
+                InfoCard(Icons.Default.LocationOn, "Reside en: ${vm.ciudadResidencia.ifBlank { "Cádiz" }}", modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(32.dp))
 
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
